@@ -23,4 +23,18 @@ public class GameService {
     public List<Game> buscarTodosGames() {
         return gameRepository.findAll();
     }
+
+    public Game atualizarGame(Long id, Game gameAtualizado) {
+        Game gameExistente = buscarId(id);
+        gameExistente.setTitulo(gameAtualizado.getTitulo());
+        gameExistente.setGenero(gameAtualizado.getGenero());
+        gameExistente.setPlataforma(gameAtualizado.getPlataforma());
+        gameExistente.setDesenvolvedora(gameAtualizado.getDesenvolvedora());
+        gameExistente.setNota(gameAtualizado.getNota());
+        return gameRepository.save(gameExistente);
+    }
+
+    public void deletarGame(Long id) {
+        gameRepository.deleteById(id);
+    }
 }

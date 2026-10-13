@@ -28,4 +28,14 @@ public class GameController {
     public Game buscarId(@PathVariable Long id) {
         return gameService.buscarId(id);
     }
+
+    @PutMapping("/{id}")
+    public Game atualizarGame(@PathVariable Long id, @RequestBody Game game) {
+        return gameService.atualizarGame(id, game);
+    }
+
+    @DeleteMapping("/{id}")
+    public void deletarGame(@PathVariable Long id) {
+        gameService.deletarGame(id);
+    }
 }
