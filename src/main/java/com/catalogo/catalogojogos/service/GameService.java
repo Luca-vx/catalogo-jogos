@@ -1,6 +1,7 @@
 package com.catalogo.catalogojogos.service;
 
 import com.catalogo.catalogojogos.entity.Game;
+import com.catalogo.catalogojogos.exception.GameNotFoundException;
 import com.catalogo.catalogojogos.repository.GameRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -18,7 +19,9 @@ public class GameService {
     }
 
     public Game buscarId(Long id) {
-        return gameRepository.findById(id).get();
+        return gameRepository.findById(id).orElseThrow(
+                () -> new GameNotFoundException(id)
+        );
     }
     public List<Game> buscarTodosGames() {
         return gameRepository.findAll();
@@ -35,6 +38,7 @@ public class GameService {
     }
 
     public void deletarGame(Long id) {
-        gameRepository.deleteById(id);
+        Game game = buscarId(id);
+        gameRepository.delete(game);
     }
 }
