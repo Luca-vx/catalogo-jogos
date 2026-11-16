@@ -1,19 +1,16 @@
 package com.catalogo.gateway.aggregator;
 
 import com.catalogo.gateway.adapter.OfertaLojaPort;
+import com.catalogo.gateway.client.AvaliacoesClient;
+import com.catalogo.gateway.client.CatalogoClient;
 import com.catalogo.gateway.dto.AvaliacaoResumoDTO;
 import com.catalogo.gateway.dto.GameCompletoDTO;
 import com.catalogo.gateway.dto.GameDTO;
 import com.catalogo.gateway.dto.OfertaLojaDTO;
-import com.catalogo.gateway.exception.ServiceUnavailableException;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.http.HttpStatusCode;
 import org.springframework.stereotype.Service;
-import org.springframework.web.client.HttpClientErrorException;
-import org.springframework.web.client.ResourceAccessException;
-import org.springframework.web.client.RestClient;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -35,26 +32,23 @@ public class GameAggregatorService {
 
     private static final Logger log = LoggerFactory.getLogger(GameAggregatorService.class);
 
-    private final RestClient restClient;
     private final OfertaLojaPort ofertaLojaPort;
-    private final String catalogoUrl;
-    private final String avaliacoesUrl;
+    private final AvaliacoesClient avaliacoesClient;
+    private final CatalogoClient catalogoClient;
 
-    public GameAggregatorService(RestClient restClient,
-                                 OfertaLojaPort ofertaLojaPort,
-                                 @Value("${servicos.catalogo.url}") String catalogoUrl,
-                                 @Value("${servicos.avaliacoes.url}") String avaliacoesUrl) {
-        this.restClient = restClient;
+    public GameAggregatorService(OfertaLojaPort ofertaLojaPort,
+                                 AvaliacoesClient avaliacoesClient,
+                                 CatalogoClient catalogoClient) {
         this.ofertaLojaPort = ofertaLojaPort;
-        this.catalogoUrl = catalogoUrl;
-        this.avaliacoesUrl = avaliacoesUrl;
+        this.avaliacoesClient = avaliacoesClient;
+        this.catalogoClient = catalogoClient;
     }
 
     public Optional<GameCompletoDTO> buscarGameCompleto(Long gameId) {
         log.info("[AGGREGATOR] Iniciando agregação de informações para o jogo id: {}", gameId);
 
         // 1. Consulta ao Serviço A (Catálogo - essencial)
-        GameDTO game = consultarServicoCatalogo(gameId);
+        GameDTO game = catalogoClient.buscarPorId(gameId);
         if (game == null) {
             log.warn("[AGGREGATOR] Jogo {} não encontrado no Serviço de Catálogo.", gameId);
             return Optional.empty();
@@ -63,7 +57,7 @@ public class GameAggregatorService {
         List<String> avisosIntegracao = new ArrayList<>();
 
         // 2. Consulta ao Serviço B (Avaliações - secundário com fallback)
-        AvaliacaoResumoDTO avaliacoes = consultarServicoAvaliacoes(gameId, avisosIntegracao);
+        AvaliacaoResumoDTO avaliacoes = avaliacoesClient.buscarResumo(gameId, avisosIntegracao);
 
         // 3. Consulta ao Serviço C via Adapter (Loja Externa - secundário com fallback)
         OfertaLojaDTO melhorOferta = consultarLojaExternaViaAdapter(gameId, avisosIntegracao);
@@ -86,41 +80,6 @@ public class GameAggregatorService {
 
         log.info("[AGGREGATOR] Agregação concluída com sucesso para o jogo: {}", game.titulo());
         return Optional.of(resultado);
-    }
-
-    private GameDTO consultarServicoCatalogo(Long gameId) {
-        String url = catalogoUrl + "/game/" + gameId;
-        try {
-            return restClient.get()
-                    .uri(url)
-                    .retrieve()
-                    .onStatus(HttpStatusCode::is4xxClientError, (req, resp) -> {
-                        log.warn("[AGGREGATOR] Jogo {} não localizado no Serviço A (HTTP {})", gameId, resp.getStatusCode());
-                    })
-                    .body(GameDTO.class);
-        } catch (ResourceAccessException ex) {
-            log.error("[AGGREGATOR] Serviço A (Catálogo) está inacessível: {}", ex.getMessage());
-            throw new ServiceUnavailableException("Serviço de Catálogo temporariamente indisponível.");
-        } catch (HttpClientErrorException.NotFound ex) {
-            return null;
-        } catch (Exception ex) {
-            log.error("[AGGREGATOR] Erro ao consultar Serviço A: {}", ex.getMessage());
-            return null;
-        }
-    }
-
-    private AvaliacaoResumoDTO consultarServicoAvaliacoes(Long gameId, List<String> avisos) {
-        String url = avaliacoesUrl + "/avaliacoes/game/" + gameId + "/resumo";
-        try {
-            return restClient.get()
-                    .uri(url)
-                    .retrieve()
-                    .body(AvaliacaoResumoDTO.class);
-        } catch (Exception ex) {
-            log.warn("[AGGREGATOR] Não foi possível consultar o Serviço B de Avaliações: {}. Aplicando degradação graciosa.", ex.getMessage());
-            avisos.add("Serviço de avaliações temporariamente indisponível ou sem dados");
-            return new AvaliacaoResumoDTO(gameId, 0.0, 0, List.of());
-        }
     }
 
     private OfertaLojaDTO consultarLojaExternaViaAdapter(Long gameId, List<String> avisos) {

@@ -8,6 +8,7 @@ import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
+import org.springframework.web.client.HttpServerErrorException;
 import org.springframework.web.client.RestClient;
 
 import java.util.Optional;
@@ -103,15 +104,23 @@ class LojaExternaAdapterTest {
     }
 
     @Test
-    @DisplayName("Deve retornar Optional.empty() quando o serviço legado estiver com erro interno (500)")
-    void deveTratarErroServidorLegadoSemLancarExcecao() {
+    @DisplayName("Deve propagar exceção quando o serviço legado retornar erro interno (500) para acionar Retry/CircuitBreaker")
+    void devePropagarExcecaoQuandoServicoLegadoRetornarErro500() {
         mockServer.expect(requestTo("http://localhost:8083/api/v1/legacy-store/pricing/5"))
                 .andExpect(method(HttpMethod.GET))
                 .andRespond(withServerError());
 
-        Optional<OfertaLojaDTO> resultado = adapter.buscarOfertaPorGameId(5L);
+        assertThrows(HttpServerErrorException.InternalServerError.class,
+                () -> adapter.buscarOfertaPorGameId(5L));
 
-        assertTrue(resultado.isEmpty(), "Falha do serviço remoto deve ser tratada graciosamente");
         mockServer.verify();
+    }
+
+    @Test
+    @DisplayName("Deve retornar Optional.empty() no fallback quando ocorrer falha na integração")
+    void deveRetornarVazioNoFallback() {
+        Optional<OfertaLojaDTO> resultado = adapter.fallback(5L, new RuntimeException("Serviço indisponível"));
+
+        assertTrue(resultado.isEmpty(), "Fallback deve degradar graciosamente retornando Optional.empty()");
     }
 }
